@@ -17,14 +17,17 @@ router = APIRouter()
 async def notify_admin(orders: List[Dict]):
     """frontend-admin으로 주문 데이터를 전송하는 함수"""
     try:
+        logger.info(f"관리자 페이지로 주문 데이터 전송: {orders}")
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                "http://localhost:3001/api/orders/update",
+                "http://localhost:5174/api/orders/update",
                 json={"orders": orders},
                 headers={"Content-Type": "application/json"}
             )
             if response.status_code != 200:
                 logger.error(f"관리자 페이지 업데이트 실패: {response.text}")
+            else:
+                logger.info("관리자 페이지 업데이트 성공")
     except Exception as e:
         logger.error(f"관리자 페이지 알림 중 오류 발생: {str(e)}")
 
@@ -214,8 +217,8 @@ async def place_order(
             samesite="lax"
         )
         
-        # frontend-admin으로 빈 주문 데이터 전송
-        await notify_admin([])
+        # frontend-admin으로 주문 데이터 전송
+        await notify_admin(order_data["orders"])
         
         logger.info("주문이 성공적으로 처리되었습니다.")
         return {"message": "주문이 성공적으로 처리되었습니다."}
