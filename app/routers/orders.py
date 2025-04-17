@@ -1,17 +1,32 @@
 from fastapi import APIRouter, Depends, HTTPException, Response, Cookie
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Dict
 from ..database import get_db
 from ..schemas.order import Order, OrderCreate, OrderItemCreate
 from ..database import Order as OrderModel, OrderItem as OrderItemModel
 import json
 import logging
+import httpx
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+async def notify_admin(orders: List[Dict]):
+    """frontend-admin으로 주문 데이터를 전송하는 함수"""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "http://localhost:3001/api/orders/update",
+                json={"orders": orders},
+                headers={"Content-Type": "application/json"}
+            )
+            if response.status_code != 200:
+                logger.error(f"관리자 페이지 업데이트 실패: {response.text}")
+    except Exception as e:
+        logger.error(f"관리자 페이지 알림 중 오류 발생: {str(e)}")
 
 @router.post("/orders/", response_model=Order)
 async def create_order(order: OrderCreate, db: Session = Depends(get_db)):
@@ -59,6 +74,20 @@ async def update_order_status(order_id: int, status: str, db: Session = Depends(
     db.commit()
     return {"message": "Order status updated successfully"}
 
+@router.get("/orders")
+async def get_orders_cookie(orders_cookie: Optional[str] = Cookie(None)):
+    try:
+        if not orders_cookie:
+            logger.info("주문이 없습니다.")
+            return []
+            
+        orders = json.loads(orders_cookie)
+        logger.info(f"주문 조회: 총 {len(orders)}개의 주문")
+        return orders
+    except Exception as e:
+        logger.error(f"주문 조회 중 오류 발생: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+
 @router.post("/orders/add")
 async def add_order(
     order_data: dict,
@@ -105,23 +134,13 @@ async def add_order(
             samesite="lax"
         )
         
+        # frontend-admin으로 주문 데이터 전송
+        await notify_admin(orders)
+        
         logger.info(f"현재 총 주문 수: {len(orders)}")
         return {"message": "주문이 추가되었습니다."}
     except Exception as e:
         logger.error(f"주문 추가 중 오류 발생: {str(e)}")
-        raise HTTPException(status_code=400, detail=str(e))
-
-@router.get("/orders")
-async def get_orders_cookie(orders_cookie: Optional[str] = Cookie(None)):
-    try:
-        if not orders_cookie:
-            logger.info("주문이 없습니다.")
-            return []
-        orders = json.loads(orders_cookie)
-        logger.info(f"주문 조회: 총 {len(orders)}개의 주문")
-        return orders
-    except Exception as e:
-        logger.error(f"주문 조회 중 오류 발생: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.delete("/orders/{order_id}")
@@ -153,6 +172,9 @@ async def remove_order(
             secure=True,
             samesite="lax"
         )
+        
+        # frontend-admin으로 업데이트된 주문 데이터 전송
+        await notify_admin(orders)
         
         return {"message": "주문이 삭제되었습니다."}
     except Exception as e:
@@ -192,8 +214,60 @@ async def place_order(
             samesite="lax"
         )
         
+        # frontend-admin으로 빈 주문 데이터 전송
+        await notify_admin([])
+        
         logger.info("주문이 성공적으로 처리되었습니다.")
         return {"message": "주문이 성공적으로 처리되었습니다."}
     except Exception as e:
         logger.error(f"주문 처리 중 오류 발생: {str(e)}")
-        raise HTTPException(status_code=400, detail=str(e)) 
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("/orders")
+async def add_order(order: Dict, response: Response):
+    try:
+        # 기존 주문 데이터 가져오기
+        orders_cookie = response.cookies.get("orders")
+        orders = json.loads(orders_cookie) if orders_cookie else []
+        
+        # 새 주문 추가
+        orders.append(order)
+        
+        # 쿠키에 주문 데이터 저장
+        response.set_cookie(
+            key="orders",
+            value=json.dumps(orders),
+            httponly=True,
+            samesite="lax"
+        )
+        
+        return {"message": "주문이 추가되었습니다."}
+    except Exception as e:
+        print(f"Error adding order: {e}")
+        raise HTTPException(status_code=500, detail="주문 추가에 실패했습니다.")
+
+@router.delete("/orders/{order_id}")
+async def delete_order(order_id: str, response: Response):
+    try:
+        # 기존 주문 데이터 가져오기
+        orders_cookie = response.cookies.get("orders")
+        if not orders_cookie:
+            raise HTTPException(status_code=404, detail="주문이 없습니다.")
+        
+        orders = json.loads(orders_cookie)
+        
+        # 주문 삭제
+        orders = [order for order in orders if order["id"] != order_id]
+        
+        # 쿠키에 업데이트된 주문 데이터 저장
+        response.set_cookie(
+            key="orders",
+            value=json.dumps(orders),
+            httponly=True,
+            samesite="lax"
+        )
+        
+        return {"message": "주문이 삭제되었습니다."}
+    except Exception as e:
+        print(f"Error deleting order: {e}")
+        raise HTTPException(status_code=500, detail="주문 삭제에 실패했습니다.") 
