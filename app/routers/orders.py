@@ -8,10 +8,14 @@ import json
 import logging
 import httpx
 from datetime import datetime
+import pytz
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# 한국 시간대 설정
+korea_tz = pytz.timezone('Asia/Seoul')
 
 router = APIRouter()
 
@@ -58,13 +62,16 @@ async def add_order(
             orders = json.loads(orders_cookie)
             logger.info(f"기존 주문 수: {len(orders)}")
         
+        # 한국 시간으로 현재 시간 설정
+        current_time = datetime.now(korea_tz)
+        
         # 새로운 주문 추가
         new_order = {
             "id": order_data["id"],
             "name": order_data["name"],
             "price": order_data["price"],
             "quantity": 1,
-            "created_at": datetime.now().isoformat()  # 주문 시간 추가
+            "created_at": current_time.isoformat()  # 한국 시간으로 주문 시간 추가
         }
         
         # 이미 있는 주문인지 확인
