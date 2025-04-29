@@ -151,8 +151,8 @@ async def place_order(
         logger.info("새로운 주문 요청 받음")
         logger.info(f"주문 데이터: {order_data}")
         
-        # 주문 시간 추가
-        current_time = datetime.now().isoformat()
+        # 한국 시간으로 현재 시간 설정
+        current_time = datetime.now(korea_tz).isoformat()
         orders_with_time = [
             {**order, "created_at": current_time, "customerName": order.get("customerName", "")}
             for order in order_data["orders"]
